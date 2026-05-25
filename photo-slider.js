@@ -176,15 +176,6 @@
       _rafId = requestAnimationFrame(_frame);
     }
 
-    /* 完了後: img 要素を差し替えて canvas を片付ける */
-    function _finish() {
-      currentEl.src           = nextEl.src;
-      currentEl.style.opacity = '1';
-      nextEl.style.opacity    = '0';
-      state = 'Idle';
-      onCompleted();
-    }
-
     /* 2枚の画像を並行ロードし、両方揃ったら cb(imgA, imgB) */
     function _loadBoth(srcA, srcB, cb) {
       var res = [null, null], n = 0;
