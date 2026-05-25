@@ -167,7 +167,7 @@
           requestAnimationFrame(function () {
             _cA.style.display = 'none';
             _cB.style.display = 'none';
-            state = 'Done';
+            state = 'Idle';  /* Idle に戻さないと次の切替を受け付けない */
             onCompleted();
           });
           return; /* _frame のループはここで終わり */
