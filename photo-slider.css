@@ -104,19 +104,31 @@
   opacity: 0;
 }
 
-/* 次説明文: 待機状態（JS の inline style で opacity:0 / translateX(-40px) を保持） */
+/* 次説明文: 待機状態
+   transition は一切持たない。点滅防止のため @keyframes animation のみで制御。 */
 .ps-root .ps-caption--next {
   z-index: 3;
-  /* transition は常時定義 → ps-animating-in クラス付与で即発火 */
-  transition:
-    opacity   var(--ps-anim-duration-caption) var(--ps-anim-easing),
-    transform var(--ps-anim-duration-caption) var(--ps-anim-easing);
+  opacity: 0;
+  transform: translateX(-40px);
+  transition: none !important;
 }
 
-/* 次説明文: 登場（左からフェードイン） */
+/* 左からフェードインする keyframes */
+@keyframes ps-caption-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 次説明文: 登場アニメーション
+   forwards で完了後も opacity:1 / translateX(0) を維持 */
 .ps-root .ps-caption--next.ps-animating-in {
-  opacity: 1 !important;
-  transform: translateX(0) !important;
+  animation: ps-caption-in var(--ps-anim-duration-caption) var(--ps-anim-easing) forwards;
 }
 
 /* ── スマホ対応 ────────────────────────────────────

@@ -229,13 +229,10 @@
     var _inTimerId   = null;
 
     function _resetNextEl() {
-      // nextEl を完全に非表示の待機状態へ（transition なし・点滅なし）
-      nextEl.style.transition = 'none';
-      nextEl.style.opacity    = '0';
-      nextEl.style.transform  = 'translateX(-40px)';
+      // ps-animating-in を外すだけ。
+      // opacity/transform/transition は CSS (.ps-caption--next) が transition:none で固定管理。
+      // inline style を触ると CSS が上書きされ点滅するため、一切触らない。
       nextEl.classList.remove('ps-animating-in');
-      void nextEl.offsetWidth;
-      nextEl.style.transition = '';
     }
 
     function _onInCompleted() {
@@ -250,7 +247,7 @@
       void currentEl.offsetWidth;
       currentEl.style.transition = '';
 
-      // nextEl をリセット（点滅しない）
+      // nextEl をリセット（クラスを外すだけ。inline style は触らない）
       _resetNextEl();
 
       outCompleted = false;
@@ -382,7 +379,7 @@
       '  </div>',
       '  <div class="ps-caption-area">',
       '    <p class="ps-caption ps-caption--current">'+_esc(firstSlide.caption)+'</p>',
-      '    <p class="ps-caption ps-caption--next" style="opacity:0;transform:translateX(-40px)"></p>',
+      '    <p class="ps-caption ps-caption--next"></p>',
       '  </div>',
       '</div>'
     ].join('\n');
