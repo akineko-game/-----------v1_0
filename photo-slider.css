@@ -37,7 +37,9 @@
 /* ── ドットナビゲーション ──────────────────────────── */
 .ps-root .ps-dots-wrap {
   display: flex;
-  justify-content: center;
+  /* justify-content は指定しない:
+     センタリングすると overflow 時に左端がクリップされて見えなくなる。
+     少ない場合は margin auto のドット側で中央寄せする。 */
   align-items: center;
   gap: 8px;
   padding: 10px 12px 8px;
@@ -51,6 +53,14 @@
 }
 .ps-root .ps-dots-wrap::-webkit-scrollbar {
   display: none;                     /* Chrome/Safari: スクロールバー非表示 */
+}
+
+/* ドットが少なくて横スクロール不要な場合は中央寄せ */
+.ps-root .ps-dots-wrap::before,
+.ps-root .ps-dots-wrap::after {
+  content: '';
+  flex: 1 0 0;   /* 左右に等幅の余白を作ってドット群を中央に押し込む */
+  min-width: 4px;
 }
 
 .ps-root .ps-dot {
