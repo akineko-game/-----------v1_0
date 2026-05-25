@@ -65,10 +65,10 @@
     var _rafId = null;
 
     /* 定数 */
-    var MORPH_MS  = 1200;  /* アニメーション総時間(ms) */
-    var PIXEL_MAX = 60;    /* モザイク最大ピクセルサイズ */
-    var MOVE_X    = 0.22;  /* 水平移動量（幅の比率） */
-    var MOVE_Y    = 0.15;  /* 垂直移動量（高さの比率） */
+    var MORPH_MS  = 1400;  /* アニメーション総時間(ms) */
+    var PIXEL_MAX = 120;   /* モザイク最大ピクセルサイズ */
+    var MOVE_X    = 0.55;  /* 水平移動量（幅の比率） */
+    var MOVE_Y    = 0.40;  /* 垂直移動量（高さの比率） */
 
     var _cA, _ctxA;  /* Canvas A: 現在画像退避 */
     var _cB, _ctxB;  /* Canvas B: 次画像登場   */
