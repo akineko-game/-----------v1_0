@@ -1,9 +1,224 @@
 /**
  * PhotoSlider — photo-slider.js
- * 既存ホームページ組み込み型Webコンポーネント（IIFE形式）
+ * 画像・説明文ともに canvas モザイクで切替。説明文は画像に重ねて表示。
  */
 (function (global) {
   'use strict';
+
+  /* ================================================================
+     共通モザイクアニメーション定数
+     ================================================================ */
+  var MORPH_MS  = 1600;  /* アニメーション総時間(ms) */
+  var PIXEL_MAX = 200;   /* モザイク最大ピクセルサイズ */
+  var MOVE_X    = 1.20;  /* 水平移動量（幅の比率） */
+  var MOVE_Y    = 0.90;  /* 垂直移動量（高さの比率） */
+
+  /* ================================================================
+     共通: canvas にモザイク描画
+       ctx      : 描画先 CanvasRenderingContext2D
+       src      : Image オブジェクト（null なら何もしない）
+       pixelSize: ブロックサイズ（1=クリア）
+       ox, oy   : 描画オフセット（移動表現）
+       alpha    : 0〜1 の不透明度
+     ================================================================ */
+  function drawPixelated(ctx, src, pixelSize, ox, oy, alpha) {
+    var cw = ctx.canvas.width, ch = ctx.canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+    if (!src) return;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    if (pixelSize <= 1) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(src, ox, oy, cw, ch);
+    } else {
+      var sw = Math.max(1, Math.ceil(cw / pixelSize));
+      var sh = Math.max(1, Math.ceil(ch / pixelSize));
+      var tmp = document.createElement('canvas');
+      tmp.width = sw; tmp.height = sh;
+      var tCtx = tmp.getContext('2d');
+      tCtx.imageSmoothingEnabled = true;
+      tCtx.drawImage(src, 0, 0, sw, sh);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tmp, 0, 0, sw, sh, ox, oy, cw, ch);
+    }
+    ctx.restore();
+  }
+
+  /* ================================================================
+     共通: 2ソースを並行ロードし両方揃ったら cb(a, b)
+     ================================================================ */
+  function loadBoth(srcA, srcB, cb) {
+    var res = [null, null], n = 0;
+    function one(src, idx) {
+      if (!src) { n++; if (n === 2) cb(res[0], res[1]); return; }
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload  = function () { res[idx] = img; if (++n === 2) cb(res[0], res[1]); };
+      img.onerror = function () {                  if (++n === 2) cb(res[0], res[1]); };
+      img.src = src;
+    }
+    one(srcA, 0);
+    one(srcB, 1);
+  }
+
+  /* ================================================================
+     共通: canvas を stage に追加して返す
+     ================================================================ */
+  function makeCanvas(stageEl, z) {
+    var c = document.createElement('canvas');
+    c.style.cssText = [
+      'position:absolute', 'top:0', 'left:0',
+      'width:100%', 'height:100%',
+      'z-index:' + z, 'display:none', 'pointer-events:none'
+    ].join(';');
+    stageEl.appendChild(c);
+    return c;
+  }
+
+  /* ================================================================
+     共通: ステージサイズに canvas を合わせる
+     ================================================================ */
+  function resizeCanvas(c, stageEl) {
+    c.width  = stageEl.offsetWidth  || 800;
+    c.height = stageEl.offsetHeight || 480;
+  }
+
+  /* ================================================================
+     共通モザイクアニメーター
+     現在コンテンツ: 右下へ移動・モザイク増加・フェードアウト（Canvas A）
+     次コンテンツ  : 左下から移動・モザイク減少・フェードイン  （Canvas B）
+     onCompleted() を呼んでから state='Idle' に戻る。
+     ================================================================ */
+  function createMosaicAnimator(stageEl, zA, zB) {
+    var _cA, _ctxA, _cB, _ctxB;
+    var _srcA = null, _srcB = null;
+    var state = 'Idle';
+
+    _cA = makeCanvas(stageEl, zA); _ctxA = _cA.getContext('2d');
+    _cB = makeCanvas(stageEl, zB); _ctxB = _cB.getContext('2d');
+
+    function _resize() {
+      resizeCanvas(_cA, stageEl);
+      resizeCanvas(_cB, stageEl);
+    }
+
+    function _drawFrame(t) {
+      var easeOut = 1 - Math.pow(1 - t, 2.5);
+      var easeIn  = Math.pow(t, 1.6);
+      var W = _cA.width, H = _cA.height;
+
+      /* Canvas A: 現在 → 右下へ退避・モザイク増加・フェードアウト */
+      drawPixelated(_ctxA, _srcA,
+        Math.round(1 + (PIXEL_MAX - 1) * easeIn),
+        W * MOVE_X * easeOut,
+        H * MOVE_Y * easeOut,
+        1.0 - easeOut);
+
+      /* Canvas B: 次 → 左下から登場・モザイク減少・フェードイン */
+      drawPixelated(_ctxB, _srcB,
+        Math.max(1, Math.round(PIXEL_MAX * (1 - easeOut))),
+        -W * MOVE_X * (1 - easeOut),
+         H * MOVE_Y * (1 - easeOut),
+        easeIn);
+    }
+
+    return {
+      getState: function () { return state; },
+
+      /* srcA: 現在コンテンツの Image/canvas
+         srcB: 次コンテンツの Image/canvas
+         両方 null 可（テキストcanvasなど）
+         onCompleted: 完了時コールバック */
+      start: function (srcA, srcB, onCompleted) {
+        if (state !== 'Idle') return;
+        state = 'Animating';
+        _srcA = srcA;
+        _srcB = srcB;
+        _resize();
+
+        /* 初期フレーム */
+        drawPixelated(_ctxA, _srcA, 1,        0, 0, 1.0);
+        drawPixelated(_ctxB, _srcB, PIXEL_MAX, 0, 0, 0.0);
+        _cA.style.display = 'block';
+        _cB.style.display = 'block';
+
+        var startTs = null;
+        function _frame(ts) {
+          if (state !== 'Animating') return;
+          if (!startTs) startTs = ts;
+          var t = Math.min((ts - startTs) / MORPH_MS, 1.0);
+          _drawFrame(t);
+
+          if (t < 1.0) {
+            requestAnimationFrame(_frame);
+          } else {
+            /* 完了: img/canvas を先に表示してから canvas を消す（点滅防止） */
+            onCompleted();
+            requestAnimationFrame(function () {
+              _cA.style.display = 'none';
+              _cB.style.display = 'none';
+              state = 'Idle';
+            });
+          }
+        }
+        requestAnimationFrame(_frame);
+      },
+
+      hide: function () {
+        _cA.style.display = 'none';
+        _cB.style.display = 'none';
+        state = 'Idle';
+      }
+    };
+  }
+
+  /* ================================================================
+     共通: テキストを canvas に描画して返す
+     caption-overlay 要素のサイズを基準に描画する。
+     ================================================================ */
+  function renderTextToCanvas(text, overlayEl) {
+    var w = overlayEl.offsetWidth  || 800;
+    var h = overlayEl.offsetHeight || 80;
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var ctx = c.getContext('2d');
+
+    /* 背景 */
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, w, h);
+
+    /* テキスト */
+    ctx.fillStyle   = '#ffffff';
+    ctx.font        = '15px Georgia, serif';
+    ctx.textBaseline = 'top';
+    var pad = Math.round(w * 0.018);
+    var maxW = w - pad * 2;
+
+    /* 折り返し処理 */
+    var words = text.split('');
+    var line = '', lines = [], lineH = 24;
+    for (var i = 0; i < words.length; i++) {
+      var test = line + words[i];
+      if (ctx.measureText(test).width > maxW && line !== '') {
+        lines.push(line); line = words[i];
+      } else { line = test; }
+    }
+    if (line) lines.push(line);
+
+    /* canvas 高さを行数に合わせて再設定 */
+    var totalH = pad * 2 + lines.length * lineH;
+    c.height = Math.max(h, totalH);
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, 0, w, c.height);
+    ctx.fillStyle    = '#ffffff';
+    ctx.font         = '15px Georgia, serif';
+    ctx.textBaseline = 'top';
+    lines.forEach(function (l, i) {
+      ctx.fillText(l, pad, pad + i * lineH);
+    });
+
+    return c;
+  }
 
   /* ================================================================
      M5 — SlideCollection
@@ -37,23 +252,19 @@
       getState: function () { return state; },
       start: function () {
         if (!enabled || state !== 'Stopped') return;
-        timerId = setInterval(_tick, interval);
-        state = 'Running';
+        timerId = setInterval(_tick, interval); state = 'Running';
       },
       reset: function () {
         clearInterval(timerId); timerId = null;
         if (!enabled) return;
-        timerId = setInterval(_tick, interval);
-        state = 'Running';
+        timerId = setInterval(_tick, interval); state = 'Running';
       },
       stop: function () { clearInterval(timerId); timerId = null; state = 'Stopped'; }
     };
   }
 
   /* ================================================================
-     M3 — ImageAnimator
-     Canvas A（現在画像）: 右下へ移動しながらモザイク化 + フェードアウト
-     Canvas B（次画像）  : 左下から移動しながらモザイクが取れてフェードイン
+     M3 — ImageAnimator（画像モザイク）
      ================================================================ */
   function createImageAnimator(opts) {
     var currentEl   = opts.currentEl;
@@ -61,246 +272,65 @@
     var stageEl     = opts.stageEl;
     var onCompleted = opts.onCompleted;
 
-    var state  = 'Idle';
-    var _rafId = null;
-
-    /* 定数 */
-    var MORPH_MS  = 1600;  /* アニメーション総時間(ms) */
-    var PIXEL_MAX = 200;   /* モザイク最大ピクセルサイズ */
-    var MOVE_X    = 1.20;  /* 水平移動量（幅の比率） */
-    var MOVE_Y    = 0.90;  /* 垂直移動量（高さの比率） */
-
-    var _cA, _ctxA;  /* Canvas A: 現在画像退避 */
-    var _cB, _ctxB;  /* Canvas B: 次画像登場   */
-    var _imgCur = null, _imgNxt = null;
-
-    /* canvas 生成 */
-    function _mkCanvas(z) {
-      var c = document.createElement('canvas');
-      c.style.cssText = [
-        'position:absolute','top:0','left:0',
-        'width:100%','height:100%',
-        'z-index:'+z,'display:none','pointer-events:none'
-      ].join(';');
-      stageEl.appendChild(c);
-      return c;
-    }
-
-    /* ステージサイズに合わせて canvas を設定 */
-    function _resize() {
-      var w = stageEl.offsetWidth  || 800;
-      var h = stageEl.offsetHeight || 480;
-      _cA.width = w; _cA.height = h;
-      _cB.width = w; _cB.height = h;
-    }
-
-    /* 1枚の canvas に画像をモザイク描画する
-       img      : Image オブジェクト
-       pixelSize: モザイクのブロックサイズ（1=クリア）
-       ox, oy   : canvas 上の描画オフセット（移動表現）
-       alpha    : 0〜1 の不透明度                        */
-    function _drawOne(ctx, img, pixelSize, ox, oy, alpha) {
-      var cw = ctx.canvas.width;
-      var ch = ctx.canvas.height;
-      ctx.clearRect(0, 0, cw, ch);
-      if (!img) return;
-
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-
-      if (pixelSize <= 1) {
-        /* クリア描画 */
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(img, ox, oy, cw, ch);
-      } else {
-        /* モザイク描画:
-           (1) 縮小専用の一時 canvas を作って img を sw×sh に縮小
-           (2) スムージング OFF で cw×ch に拡大 → ブロック状になる */
-        var sw = Math.max(1, Math.ceil(cw / pixelSize));
-        var sh = Math.max(1, Math.ceil(ch / pixelSize));
-
-        var tmp = document.createElement('canvas');
-        tmp.width  = sw;
-        tmp.height = sh;
-        var tCtx = tmp.getContext('2d');
-        tCtx.imageSmoothingEnabled = true;
-        tCtx.drawImage(img, 0, 0, sw, sh);
-
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(tmp, 0, 0, sw, sh, ox, oy, cw, ch);
-      }
-      ctx.restore();
-    }
-
-    /* メインアニメーションループ */
-    function _animate(startTs) {
-      function _frame(ts) {
-        if (state !== 'Animating') return;
-
-        var t       = Math.min((ts - startTs) / MORPH_MS, 1.0);
-        var easeOut = 1 - Math.pow(1 - t, 2.5);  /* 0→1 減速 */
-        var easeIn  = Math.pow(t, 1.6);           /* 0→1 加速 */
-        var W = _cA.width, H = _cA.height;
-
-        /* Canvas A: 現在画像 ── 右下へ移動・モザイク増加・フェードアウト */
-        _drawOne(_ctxA, _imgCur,
-          Math.round(1 + (PIXEL_MAX - 1) * easeIn),  /* px: 1→PIXEL_MAX */
-           W * MOVE_X * easeOut,                      /* ox: 0→右 */
-           H * MOVE_Y * easeOut,                      /* oy: 0→下 */
-          1.0 - easeOut);                             /* alpha: 1→0 */
-
-        /* Canvas B: 次画像 ── 左下から中央へ移動・モザイク減少・フェードイン */
-        _drawOne(_ctxB, _imgNxt,
-          Math.max(1, Math.round(PIXEL_MAX * (1 - easeOut))), /* px: PIXEL_MAX→1 */
-          -W * MOVE_X * (1 - easeOut),                        /* ox: 左外→0 */
-           H * MOVE_Y * (1 - easeOut),                        /* oy: 下→0 */
-          easeIn);                                             /* alpha: 0→1 */
-
-        if (t < 1.0) {
-          _rafId = requestAnimationFrame(_frame);
-        } else {
-          /* 点滅防止: img を先に表示してから canvas を消す */
-          currentEl.src           = nextEl.src;
-          currentEl.style.opacity = '1';
-          nextEl.style.opacity    = '0';
-          /* img が描画されるのを1フレーム待ってから canvas を消す */
-          requestAnimationFrame(function () {
-            _cA.style.display = 'none';
-            _cB.style.display = 'none';
-            state = 'Idle';  /* Idle に戻さないと次の切替を受け付けない */
-            onCompleted();
-          });
-          return; /* _frame のループはここで終わり */
-        }
-      }
-      _rafId = requestAnimationFrame(_frame);
-    }
-
-    /* 2枚の画像を並行ロードし、両方揃ったら cb(imgA, imgB) */
-    function _loadBoth(srcA, srcB, cb) {
-      var res = [null, null], n = 0;
-      function _one(src, idx) {
-        var img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload  = function () { res[idx] = img; if (++n === 2) cb(res[0], res[1]); };
-        img.onerror = function () {                  if (++n === 2) cb(res[0], res[1]); };
-        img.src = src;
-      }
-      _one(srcA, 0);
-      _one(srcB, 1);
-    }
-
-    /* 初期化 */
-    _cA = _mkCanvas(5); _ctxA = _cA.getContext('2d');
-    _cB = _mkCanvas(6); _ctxB = _cB.getContext('2d');
+    var _anim = createMosaicAnimator(stageEl, 5, 6);
 
     return {
-      getState: function () { return state; },
-
+      getState: function () { return _anim.getState(); },
       startAnimation: function (payload) {
-        if (state !== 'Idle') return;
-        state = 'Loading';
+        if (_anim.getState() !== 'Idle') return;
 
-        /* img を即時非表示（canvas が前面に出る） */
+        /* img を非表示（canvas が前面に出る） */
         currentEl.style.opacity = '0';
         nextEl.src              = payload.nextImageSrc;
         nextEl.style.opacity    = '0';
 
-        _loadBoth(payload.currentImageSrc, payload.nextImageSrc, function (imgCur, imgNxt) {
-          if (state !== 'Loading') return;
-          _imgCur = imgCur;
-          _imgNxt = imgNxt;
-          _resize();
-
-          /* 初期フレーム: A=クリア表示、B=最大モザイクで透明 */
-          _drawOne(_ctxA, _imgCur, 1,        0, 0, 1.0);
-          _drawOne(_ctxB, _imgNxt, PIXEL_MAX, 0, 0, 0.0);
-          _cA.style.display = 'block';
-          _cB.style.display = 'block';
-
-          state = 'Animating';
-          requestAnimationFrame(function (ts) { _animate(ts); });
+        loadBoth(payload.currentImageSrc, payload.nextImageSrc, function (imgCur, imgNxt) {
+          _anim.start(imgCur, imgNxt, function () {
+            /* 完了: img を差し替えて表示 */
+            currentEl.src           = nextEl.src;
+            currentEl.style.opacity = '1';
+            nextEl.style.opacity    = '0';
+            onCompleted();
+          });
         });
       }
     };
   }
+
   /* ================================================================
-     M4 — CaptionAnimator
-     点滅根絶策：transitionend を使わず setTimeout で完了を管理する。
-     duration と同じ時間後に1回だけ確実に完了処理が走る。
+     M4 — CaptionAnimator（説明文モザイク）
+     説明文テキストを canvas に描画し、画像と同じモーフィングで切替。
      ================================================================ */
   function createCaptionAnimator(opts) {
-    var currentEl   = opts.currentEl;
-    var nextEl      = opts.nextEl;
+    var overlayEl   = opts.overlayEl;   /* .ps-caption-overlay 要素 */
+    var stageEl     = opts.stageEl;
     var onCompleted = opts.onCompleted;
 
-    var CAPTION_DURATION_MS = 550; // CSSの --ps-anim-duration-caption と合わせる
-
-    var state        = 'Idle';
-    var outCompleted = false;
-    var _outTimerId  = null;
-    var _delayTimerId = null;
-    var _inTimerId   = null;
-
-    function _resetNextEl() {
-      // ps-animating-in を外すだけ。
-      // opacity/transform/transition は CSS (.ps-caption--next) が transition:none で固定管理。
-      // inline style を触ると CSS が上書きされ点滅するため、一切触らない。
-      nextEl.classList.remove('ps-animating-in');
-    }
-
-    function _onInCompleted() {
-      // アニメーション完了（setTimeout で1回だけ呼ばれる）
-      state = 'Done';
-
-      // currentEl にテキストをスワップ（transition なしで瞬時に opacity:1）
-      currentEl.textContent      = nextEl.textContent;
-      currentEl.style.transition = 'none';
-      currentEl.style.opacity    = '1';
-      currentEl.classList.remove('ps-animating-out');
-      void currentEl.offsetWidth;
-      currentEl.style.transition = '';
-
-      // nextEl をリセット（クラスを外すだけ。inline style は触らない）
-      _resetNextEl();
-
-      outCompleted = false;
-      state = 'Idle';
-      onCompleted();
-    }
-
-    function _onDelayElapsed() {
-      if (state !== 'DelayWaiting') return;
-      state = 'AnimatingIn';
-
-      // 確実に待機状態からスタートさせる
-      _resetNextEl();
-
-      // 1フレーム後にクラス付与（reflow が確実に終わってから）
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          nextEl.classList.add('ps-animating-in');
-          // transitionend は使わず、duration と同じ時間後に完了処理
-          _inTimerId = setTimeout(_onInCompleted, CAPTION_DURATION_MS + 50); // +50ms マージン
-        });
-      });
-    }
+    /* 現在表示中のテキストcanvasを保持 */
+    var _curCanvas  = null;
+    var _anim       = createMosaicAnimator(stageEl, 7, 8);
 
     return {
-      getState: function () { return state; },
+      getState: function () { return _anim.getState(); },
+
+      /* 初期表示（アニメーションなし） */
+      initCaption: function (caption) {
+        _curCanvas = renderTextToCanvas(caption, overlayEl);
+        overlayEl.style.height = _curCanvas.height + 'px';
+      },
+
       startAnimation: function (payload) {
-        if (state !== 'Idle') return;
+        if (_anim.getState() !== 'Idle') return;
 
-        nextEl.textContent = payload.nextCaption;
+        var nxtCanvas = renderTextToCanvas(payload.nextCaption, overlayEl);
 
-        // 現在説明文フェードアウト（CSS transition に任せる）
-        currentEl.classList.add('ps-animating-out');
-        // setTimeout でoutCompleted管理（transitionendは使わない）
-        _outTimerId = setTimeout(function () { outCompleted = true; }, 350);
-
-        _delayTimerId = setTimeout(_onDelayElapsed, payload.delayMs);
-        state        = 'DelayWaiting';
-        outCompleted = false;
+        _anim.start(_curCanvas, nxtCanvas, function () {
+          /* 完了: overlay を次テキストcanvasの内容で静的表示 */
+          overlayEl.style.height = nxtCanvas.height + 'px';
+          /* overlay 自体の表示は canvas が担うためここでは何もしない */
+          _curCanvas = nxtCanvas;
+          onCompleted();
+        });
       }
     };
   }
@@ -314,13 +344,12 @@
     var captionAnimator = opts.captionAnimator;
     var timer           = opts.timer;
 
-    var state        = 'Idle';
-    var currentIndex = 0;
-    var nextIndex    = null;
-    var slideCount   = collection.getCount();
+    var state           = 'Idle';
+    var currentIndex    = 0;
+    var nextIndex       = null;
+    var slideCount      = collection.getCount();
     var _currentCaption = '';
     var _nextCaption    = '';
-    var DELAY_MS = 350;
 
     function dispatch(event) {
       _log('[M1] dispatch: ' + event + ' (state=' + state + ')');
@@ -328,8 +357,8 @@
 
         case 'RequestNext':
         case 'RequestPrev':
-          if (state !== 'Idle')   { _log('[M1] 棄却: ' + event); return; }
-          if (slideCount < 2)     { _log('[M1] 棄却: slideCount=' + slideCount); return; }
+          if (state !== 'Idle')  { _log('[M1] 棄却: ' + event); return; }
+          if (slideCount < 2)    { _log('[M1] 棄却: slideCount=' + slideCount); return; }
           nextIndex = (event === 'RequestNext')
             ? (currentIndex + 1) % slideCount
             : (currentIndex - 1 + slideCount) % slideCount;
@@ -338,31 +367,40 @@
           _currentCaption = cs.caption;
           _nextCaption    = ns.caption;
           state = 'SwitchingImage';
+          /* 画像と説明文を同時に開始 */
           imageAnimator.startAnimation({ currentImageSrc: cs.imageSrc, nextImageSrc: ns.imageSrc });
+          captionAnimator.startAnimation({ currentCaption: cs.caption, nextCaption: ns.caption });
           break;
 
         case 'ImageSwitchCompleted':
           if (state !== 'SwitchingImage') { _log('[M1] 棄却: ImageSwitchCompleted'); return; }
           state = 'SwitchingCaption';
-          captionAnimator.startAnimation({
-            currentCaption: _currentCaption,
-            nextCaption:    _nextCaption,
-            delayMs:        DELAY_MS
-          });
           break;
 
         case 'CaptionSwitchCompleted':
-          if (state !== 'SwitchingCaption') { _log('[M1] 棄却: CaptionSwitchCompleted'); return; }
-          state        = 'Completing';
-          currentIndex = nextIndex;
-          state        = 'Idle';
-          timer.reset();
-          _log('[M1] 完了。currentIndex=' + currentIndex);
+          /* 画像・説明文どちらが先に完了しても待ち合わせる */
+          if (state === 'SwitchingImage') {
+            /* 説明文が先に終わった場合: 画像完了を待つ */
+            state = 'WaitingImage';
+          } else if (state === 'SwitchingCaption' || state === 'WaitingCaption') {
+            _complete();
+          }
+          break;
+
+        case 'BothCompleted':
+          _complete();
           break;
 
         default:
           _log('[M1] 未知: ' + event);
       }
+    }
+
+    function _complete() {
+      currentIndex = nextIndex;
+      state = 'Idle';
+      timer.reset();
+      _log('[M1] 完了。currentIndex=' + currentIndex);
     }
 
     return {
@@ -388,12 +426,11 @@
     return [
       '<div class="ps-root">',
       '  <div class="ps-stage">',
-      '    <img class="ps-image-slot ps-image-slot--current" src="'+_esc(firstSlide.imageSrc)+'" alt="'+_esc(firstSlide.caption)+'">',
-      '    <img class="ps-image-slot ps-image-slot--next" src="" alt="" style="opacity:0;pointer-events:none">',
-      '  </div>',
-      '  <div class="ps-caption-area">',
-      '    <p class="ps-caption ps-caption--current">'+_esc(firstSlide.caption)+'</p>',
-      '    <p class="ps-caption ps-caption--next"></p>',
+      '    <img class="ps-image-slot ps-image-slot--current"',
+      '         src="'+_esc(firstSlide.imageSrc)+'" alt="'+_esc(firstSlide.caption)+'">',
+      '    <img class="ps-image-slot ps-image-slot--next" src="" alt=""',
+      '         style="opacity:0;pointer-events:none">',
+      '    <div class="ps-caption-overlay"></div>',
       '  </div>',
       '</div>'
     ].join('\n');
@@ -420,23 +457,39 @@
 
     var firstSlide = collection.getSlide(0);
     root.innerHTML = _buildDOM(firstSlide);
-    var psRoot  = root.querySelector('.ps-root');
-    var stageEl = psRoot.querySelector('.ps-stage');
+    var psRoot     = root.querySelector('.ps-root');
+    var stageEl    = psRoot.querySelector('.ps-stage');
+    var overlayEl  = psRoot.querySelector('.ps-caption-overlay');
 
     var controller;
+    var imgDone = false, capDone = false;
+
+    function _onImageDone() {
+      imgDone = true;
+      controller.dispatch('ImageSwitchCompleted');
+      if (capDone) { imgDone = false; capDone = false; }
+    }
+    function _onCaptionDone() {
+      capDone = true;
+      controller.dispatch('CaptionSwitchCompleted');
+      if (imgDone) { imgDone = false; capDone = false; }
+    }
 
     var imageAnimator = createImageAnimator({
       currentEl:   psRoot.querySelector('.ps-image-slot--current'),
       nextEl:      psRoot.querySelector('.ps-image-slot--next'),
       stageEl:     stageEl,
-      onCompleted: function () { controller.dispatch('ImageSwitchCompleted'); }
+      onCompleted: _onImageDone
     });
 
     var captionAnimator = createCaptionAnimator({
-      currentEl:   psRoot.querySelector('.ps-caption--current'),
-      nextEl:      psRoot.querySelector('.ps-caption--next'),
-      onCompleted: function () { controller.dispatch('CaptionSwitchCompleted'); }
+      overlayEl:   overlayEl,
+      stageEl:     stageEl,
+      onCompleted: _onCaptionDone
     });
+
+    /* 説明文の初期表示 */
+    captionAnimator.initCaption(firstSlide.caption);
 
     var timer = createAutoPlayTimer({
       interval: (autoPlay.interval != null ? autoPlay.interval : 5000),
@@ -444,12 +497,43 @@
       onFire:   function () { controller.dispatch('RequestNext'); }
     });
 
-    controller = createSliderController({
-      collection:      collection,
-      imageAnimator:   imageAnimator,
-      captionAnimator: captionAnimator,
-      timer:           timer
-    });
+    /* M1 の待ち合わせロジックを簡略化:
+       画像・説明文を同時開始し、両方完了したら Idle へ */
+    controller = {
+      dispatch: function (event) {
+        _log('[M1] dispatch: ' + event);
+        if (event === 'RequestNext' || event === 'RequestPrev') {
+          if (controller._state !== 'Idle') { _log('[M1] 棄却: ' + event); return; }
+          if (collection.getCount() < 2)    { _log('[M1] 棄却: slideCount<2'); return; }
+          controller._state = 'Switching';
+          controller._nextIdx = (event === 'RequestNext')
+            ? (controller._curIdx + 1) % collection.getCount()
+            : (controller._curIdx - 1 + collection.getCount()) % collection.getCount();
+          var cs = collection.getSlide(controller._curIdx);
+          var ns = collection.getSlide(controller._nextIdx);
+          imgDone = false; capDone = false;
+          imageAnimator.startAnimation({ currentImageSrc: cs.imageSrc, nextImageSrc: ns.imageSrc });
+          captionAnimator.startAnimation({ currentCaption: cs.caption, nextCaption: ns.caption });
+        } else if (event === 'ImageSwitchCompleted') {
+          imgDone = true;
+          if (imgDone && capDone) controller._finish();
+        } else if (event === 'CaptionSwitchCompleted') {
+          capDone = true;
+          if (imgDone && capDone) controller._finish();
+        }
+      },
+      _finish: function () {
+        imgDone = false; capDone = false;
+        controller._curIdx  = controller._nextIdx;
+        controller._state   = 'Idle';
+        timer.reset();
+        _log('[M1] 完了。currentIndex=' + controller._curIdx);
+      },
+      _state:   'Idle',
+      _curIdx:  0,
+      _nextIdx: 0,
+      getState: function () { return controller._state; }
+    };
 
     timer.start();
     _log('Global: Running');

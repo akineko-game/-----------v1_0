@@ -1,32 +1,20 @@
 /* ============================================================
    PhotoSlider — photo-slider.css
    スコープ: .ps-root 配下のみに適用
-
-   [Undefined] morphStrength: canvas のピクセルサイズ（PIXEL_START=48）で表現。
-               JS側の PIXEL_START / MORPH_MS を変更すると調整可能。
-   [Undefined] スマホ表示時のレイアウト・アニメーション仕様: 未確定。
    ============================================================ */
 
 .ps-root {
-  --ps-anim-duration-image-out: 0.4s;
-  --ps-anim-duration-caption:   0.55s;
-  --ps-anim-duration-out:       0.3s;
-  --ps-anim-easing:             cubic-bezier(0.4, 0, 0.2, 1);
-
-  --ps-stage-height:  480px;
-  --ps-caption-bg:    rgba(0, 0, 0, 0.62);
-  --ps-caption-color: #ffffff;
-  --ps-caption-font:  'Georgia', serif;
+  --ps-stage-height: 480px;
+  --ps-caption-font: 'Georgia', serif;
 
   position: relative;
   width: 100%;
-  overflow: hidden;
   box-sizing: border-box;
   font-family: var(--ps-caption-font);
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── ステージ ──────────────────────────────────────── */
+/* ── ステージ（画像＋説明文を重ねるコンテナ） ─────── */
 .ps-root .ps-stage {
   position: relative;
   width: 100%;
@@ -35,101 +23,34 @@
   background: #111;
 }
 
-/* ── 画像スロット共通 ──────────────────────────────── */
+/* ── 画像スロット（canvas が前面に出るため img は制御用） ── */
 .ps-root .ps-image-slot {
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
   object-fit: cover;
-}
-
-/* 現在画像: 通常状態 */
-/* 現在画像: canvas A が前面に出るため img は非表示（JS が opacity:0 で制御） */
-.ps-root .ps-image-slot--current {
-  opacity: 1;
-  z-index: 2;
-  transition: none; /* アニメーションはcanvasで行う */
-}
-
-/* 次画像: canvas B が前面に出るため img は非表示（JS が opacity:0 で制御） */
-.ps-root .ps-image-slot--next {
-  opacity: 0;
-  z-index: 2;
   transition: none;
 }
+.ps-root .ps-image-slot--current { opacity: 1; z-index: 2; }
+.ps-root .ps-image-slot--next    { opacity: 0; z-index: 2; }
 
-/* canvas（モザイク描画用）は JS が生成・制御 */
+/* ── 説明文オーバーレイ（ステージ下部に重ねる） ────── */
+.ps-root .ps-caption-overlay {
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%;
+  z-index: 10;          /* canvas(z=5,6) より上、かつ説明文canvasより下 */
+  pointer-events: none;
+}
+
+/* canvas（画像モザイク用・説明文モザイク用）は JS が生成 */
 .ps-root .ps-stage canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
-/* ── 説明文エリア ──────────────────────────────────── */
-.ps-root .ps-caption-area {
-  position: relative;
-  width: 100%;
-  min-height: 3.5em;
-  overflow: hidden;
-  background: var(--ps-caption-bg);
-  padding: 0.9em 1.4em;
-  box-sizing: border-box;
-}
-
-.ps-root .ps-caption {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%;
-  padding: 0.9em 1.4em;
-  box-sizing: border-box;
-  margin: 0;
-  color: var(--ps-caption-color);
-  font-size: 0.95rem;
-  line-height: 1.6;
-  letter-spacing: 0.02em;
-}
-
-/* 現在説明文: 通常表示 */
-.ps-root .ps-caption--current {
-  opacity: 1;
-  z-index: 2;
-  transition: opacity var(--ps-anim-duration-out) var(--ps-anim-easing);
-}
-
-/* 現在説明文: フェードアウト */
-.ps-root .ps-caption--current.ps-animating-out {
-  opacity: 0;
-}
-
-/* 次説明文: 待機状態
-   transition は一切持たない。点滅防止のため @keyframes animation のみで制御。 */
-.ps-root .ps-caption--next {
-  z-index: 3;
-  opacity: 0;
-  transform: translateX(-40px);
-  transition: none !important;
-}
-
-/* 左からフェードインする keyframes */
-@keyframes ps-caption-in {
-  from {
-    opacity: 0;
-    transform: translateX(-40px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* 次説明文: 登場アニメーション
-   forwards で完了後も opacity:1 / translateX(0) を維持 */
-.ps-root .ps-caption--next.ps-animating-in {
-  animation: ps-caption-in var(--ps-anim-duration-caption) var(--ps-anim-easing) forwards;
-}
-
 /* ── スマホ対応 ────────────────────────────────────
-   [Undefined] スマホ表示時のレイアウト・アニメーション仕様: 未確定。
-   ─────────────────────────────────────────────────── */
+   [Undefined] スマホ表示時の仕様: 未確定。確定後に追記。 */
 @media (max-width: 768px) {
-  /* TODO: スマホ時の仕様が確定したらここに追記 */
+  /* TODO */
 }
