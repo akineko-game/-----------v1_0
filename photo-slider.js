@@ -362,10 +362,35 @@
     timer.start();
     _log('Global: Running');
 
+    var _playing = (autoPlay.enabled != null ? autoPlay.enabled : false);
+
     return {
-      next:      function () { _switch('next'); },
-      prev:      function () { _switch('prev'); },
-      destroy:   function () { timer.stop(); _log('Global: Terminated'); },
+      /** 次のスライドへ */
+      next: function () { _switch('next'); },
+
+      /** 前のスライドへ */
+      prev: function () { _switch('prev'); },
+
+      /** 自動再生を停止する */
+      stop: function () {
+        timer.stop();
+        _playing = false;
+        _log('AutoPlay: stopped');
+      },
+
+      /** 自動再生を再開する */
+      play: function () {
+        _playing = true;
+        timer.reset();
+        _log('AutoPlay: started');
+      },
+
+      /** 自動再生中かどうかを返す */
+      isPlaying: function () { return _playing; },
+
+      /** 完全破棄（ページ離脱時などに呼ぶ） */
+      destroy: function () { timer.stop(); _playing = false; _log('Global: Terminated'); },
+
       _getState: function () { return state; }
     };
   }

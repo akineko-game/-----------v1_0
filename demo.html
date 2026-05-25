@@ -7,12 +7,14 @@
   <link rel="stylesheet" href="photo-slider.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: sans-serif;
       background: #1a1a2e;
       color: #eee;
       min-height: 100vh;
     }
+
     .demo-header {
       padding: 2rem;
       text-align: center;
@@ -20,37 +22,81 @@
       letter-spacing: 0.1em;
       color: #aaa;
     }
+
     .demo-wrap {
       max-width: 860px;
       margin: 0 auto;
       padding: 0 1rem 2rem;
     }
-    .ps-demo-controls {
+
+    /* ── コントロールバー ───────────────────────── */
+    .ps-controls {
       display: flex;
+      align-items: center;
       justify-content: center;
-      gap: 1rem;
-      padding: 1rem 0;
+      gap: 0.6rem;
+      padding: 1rem 0 0.6rem;
     }
-    .ps-demo-btn {
-      padding: 0.5rem 1.8rem;
-      background: rgba(255,255,255,0.1);
+
+    /* 共通ボタン */
+    .ps-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
+      padding: 0.55rem 1.4rem;
+      background: rgba(255,255,255,0.08);
       color: #fff;
-      border: 1px solid rgba(255,255,255,0.25);
-      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.22);
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 0.9rem;
-      letter-spacing: 0.05em;
-      transition: background 0.2s;
+      font-size: 0.88rem;
+      letter-spacing: 0.04em;
+      transition: background 0.18s, border-color 0.18s;
+      user-select: none;
     }
-    .ps-demo-btn:hover { background: rgba(255,255,255,0.2); }
+    .ps-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); }
+    .ps-btn:active { background: rgba(255,255,255,0.28); }
+
+    /* ストップ／再生ボタン（状態によって切替） */
+    #btn-toggle.is-playing {
+      background: rgba(220, 80, 80, 0.25);
+      border-color: rgba(220, 80, 80, 0.6);
+      color: #f88;
+    }
+    #btn-toggle.is-playing:hover {
+      background: rgba(220, 80, 80, 0.4);
+    }
+    #btn-toggle.is-stopped {
+      background: rgba(80, 200, 120, 0.2);
+      border-color: rgba(80, 200, 120, 0.5);
+      color: #7ef0a0;
+    }
+    #btn-toggle.is-stopped:hover {
+      background: rgba(80, 200, 120, 0.35);
+    }
+
+    /* セパレーター */
+    .ps-sep {
+      width: 1px;
+      height: 1.6rem;
+      background: rgba(255,255,255,0.15);
+    }
+
+    /* スライド件数 */
+    .ps-count {
+      font-size: 0.78rem;
+      color: #666;
+      padding-left: 0.4rem;
+    }
+
     .demo-info {
-      margin-top: 1rem;
-      padding: 0.8rem 1rem;
-      background: rgba(255,255,255,0.05);
-      border-left: 3px solid #555;
-      font-size: 0.8rem;
-      color: #888;
-      line-height: 1.6;
+      margin-top: 0.8rem;
+      padding: 0.75rem 1rem;
+      background: rgba(255,255,255,0.04);
+      border-left: 3px solid #444;
+      font-size: 0.78rem;
+      color: #777;
+      line-height: 1.7;
     }
     .demo-info code { color: #a0c4ff; }
   </style>
@@ -60,38 +106,51 @@
   <div class="demo-header">PhotoSlider — 組み込みデモ</div>
 
   <div class="demo-wrap">
+
+    <!-- スライダー本体 -->
     <div id="my-slider"></div>
-    <div class="ps-demo-controls">
-      <button class="ps-demo-btn" id="btn-prev">← 前へ</button>
-      <button class="ps-demo-btn" id="btn-next">次へ →</button>
+
+    <!-- 操作ボタン -->
+    <div class="ps-controls">
+      <button class="ps-btn" id="btn-prev">&#9664; 前へ</button>
+
+      <!-- ストップ／再生トグルボタン -->
+      <button class="ps-btn is-playing" id="btn-toggle">&#9646;&#9646; ストップ</button>
+
+      <button class="ps-btn" id="btn-next">次へ &#9654;</button>
+
+      <div class="ps-sep"></div>
+      <span class="ps-count" id="slide-count"></span>
     </div>
+
     <div class="demo-info">
-      スライド数: <code id="slide-count">-</code> 件 ／
-      スライドの追加・削除は <code>slides-config.js</code> を編集してください。<br>
-      <code>window._slider.destroy()</code> で停止 ／
-      <code>window._slider._getState()</code> で現在状態を確認。
+      スライドの追加・削除は <code>slides-config.js</code> を編集してください（最大100件）。<br>
+      <code>window._slider.stop()</code> &nbsp;/&nbsp;
+      <code>window._slider.play()</code> &nbsp;/&nbsp;
+      <code>window._slider.next()</code> &nbsp;/&nbsp;
+      <code>window._slider.prev()</code>
     </div>
+
   </div>
 
   <!-- 設定ファイル（スライドの追加・削除はここだけ編集） -->
   <script src="slides-config.js"></script>
-
   <!-- スライダー本体 -->
   <script src="photo-slider.js"></script>
 
   <script>
-    /* slides-config.js の内容を検証して上限チェック */
+    /* 設定ファイルの検証 */
     var config = PHOTO_SLIDER_CONFIG;
-
     if (!config || !Array.isArray(config.slides) || config.slides.length === 0) {
       console.error('[PhotoSlider] slides-config.js のスライドが空です。');
-    } else if (config.slides.length > 100) {
+    }
+    if (config.slides.length > 100) {
       console.warn('[PhotoSlider] スライドは最大100件です。101件目以降は無視されます。');
       config.slides = config.slides.slice(0, 100);
     }
 
-    /* スライド件数を表示 */
-    document.getElementById('slide-count').textContent = config.slides.length;
+    /* 件数表示 */
+    document.getElementById('slide-count').textContent = config.slides.length + ' 枚';
 
     /* 初期化 */
     var slider = PhotoSlider.init({
@@ -99,11 +158,43 @@
       slides:       config.slides,
       autoPlay:     config.autoPlay
     });
-
     window._slider = slider;
 
-    document.getElementById('btn-next').addEventListener('click', function () { slider.next(); });
-    document.getElementById('btn-prev').addEventListener('click', function () { slider.prev(); });
+    /* ── ボタン接続 ─────────────────────── */
+    var btnPrev   = document.getElementById('btn-prev');
+    var btnNext   = document.getElementById('btn-next');
+    var btnToggle = document.getElementById('btn-toggle');
+
+    btnPrev.addEventListener('click', function () {
+      slider.prev();
+    });
+
+    btnNext.addEventListener('click', function () {
+      slider.next();
+    });
+
+    /* ストップ ↔ 再生 トグル */
+    function _updateToggleBtn() {
+      if (slider.isPlaying()) {
+        btnToggle.className = 'ps-btn is-playing';
+        btnToggle.innerHTML = '&#9646;&#9646; ストップ';
+      } else {
+        btnToggle.className = 'ps-btn is-stopped';
+        btnToggle.innerHTML = '&#9654; 再生';
+      }
+    }
+
+    btnToggle.addEventListener('click', function () {
+      if (slider.isPlaying()) {
+        slider.stop();
+      } else {
+        slider.play();
+      }
+      _updateToggleBtn();
+    });
+
+    /* 初期状態を反映 */
+    _updateToggleBtn();
   </script>
 
 </body>
