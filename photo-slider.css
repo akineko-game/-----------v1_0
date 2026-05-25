@@ -1,20 +1,14 @@
-/* ============================================================
-   PhotoSlider — photo-slider.css
-   スコープ: .ps-root 配下のみに適用
-   ============================================================ */
+/* PhotoSlider — photo-slider.css  スコープ: .ps-root 配下のみ */
 
 .ps-root {
   --ps-stage-height: 480px;
-  --ps-caption-font: 'Georgia', serif;
-
   position: relative;
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--ps-caption-font);
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── ステージ（画像＋説明文を重ねるコンテナ） ─────── */
+/* ステージ: 画像・説明文・canvas をすべて重ねるコンテナ */
 .ps-root .ps-stage {
   position: relative;
   width: 100%;
@@ -23,7 +17,7 @@
   background: #111;
 }
 
-/* ── 画像スロット（canvas が前面に出るため img は制御用） ── */
+/* 画像スロット */
 .ps-root .ps-image-slot {
   position: absolute;
   top: 0; left: 0;
@@ -31,26 +25,12 @@
   object-fit: cover;
   transition: none;
 }
-.ps-root .ps-image-slot--current { opacity: 1; z-index: 2; }
-.ps-root .ps-image-slot--next    { opacity: 0; z-index: 2; }
 
-/* ── 説明文オーバーレイ（ステージ下部に重ねる） ────── */
-.ps-root .ps-caption-overlay {
-  position: absolute;
-  bottom: 0; left: 0;
-  width: 100%;
-  z-index: 10;          /* canvas(z=5,6) より上、かつ説明文canvasより下 */
-  pointer-events: none;
-}
-
-/* canvas（画像モザイク用・説明文モザイク用）は JS が生成 */
+/* canvas は JS が生成・制御 */
 .ps-root .ps-stage canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
-/* ── スマホ対応 ────────────────────────────────────
-   [Undefined] スマホ表示時の仕様: 未確定。確定後に追記。 */
-@media (max-width: 768px) {
-  /* TODO */
-}
+/* スマホ対応 [Undefined]: 未確定 */
+@media (max-width: 768px) { /* TODO */ }
