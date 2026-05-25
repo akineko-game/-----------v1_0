@@ -204,15 +204,20 @@
       nextEl.removeEventListener('transitionend', _handleInCompleted);
       state = 'Done';
 
-      // スワップ
+      // スワップ: currentEl を次のテキストに更新し、nextEl を待機状態に戻す
       currentEl.textContent = nextEl.textContent;
       currentEl.style.opacity = '';
       currentEl.classList.remove('ps-animating-out');
 
+      // nextEl を待機状態へ（transition:none で即時リセット、その後CSSに戻す）
       nextEl.style.transition = 'none';
       nextEl.classList.remove('ps-animating-in');
-      void nextEl.offsetWidth;
+      nextEl.style.opacity   = '0';
+      nextEl.style.transform = 'translateX(-40px)';
+      void nextEl.offsetWidth; // reflow
       nextEl.style.transition = '';
+      nextEl.style.opacity    = '';
+      nextEl.style.transform  = '';
 
       outCompleted = false;
       state = 'Idle';
@@ -224,11 +229,13 @@
       state    = 'AnimatingIn';
       _inFired = false;
 
+      // 念のため待機状態を即時リセットしてから登場アニメーション開始
       nextEl.style.transition = 'none';
       nextEl.classList.remove('ps-animating-in');
       void nextEl.offsetWidth;
       nextEl.style.transition = '';
 
+      // ps-animating-in を付与 → CSSのtransitionが発火
       nextEl.classList.add('ps-animating-in');
       nextEl.addEventListener('transitionend', _handleInCompleted);
     }
