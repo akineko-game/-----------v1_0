@@ -1,21 +1,12 @@
 /**
  * PhotoSlider — photo-slider.js
  * 既存ホームページ組み込み型Webコンポーネント（IIFE形式）
- *
- * [Undefined] direction をアニメーターへ渡すか否か: 未確定。渡さない実装。
- * [Undefined] delayMs 具体値: デフォルト 350ms を暫定採用。
- * [Undefined] AutoPlayTimer.enabled 初期値: false を暫定採用。
- * [Undefined] AutoPlayTimer.interval 具体値: 5000ms を暫定採用。
- * [Undefined] データの供給方法: JS配列を暫定採用。
- * [Undefined] SystemTerminate 時に切替中だった場合の処理: destroy() は timer.stop() のみ。
- * [Undefined] slideCount の最大値: 制限なし。
- * [Undefined] morphStrength: canvasピクセルサイズとアニメーション時間で表現。
  */
 (function (global) {
   'use strict';
 
   /* ================================================================
-     M5 — SlideCollection（データ層）
+     M5 — SlideCollection
      ================================================================ */
   function createSlideCollection(slides) {
     if (!Array.isArray(slides)) throw new Error('[SlideCollection] slides は配列でなければなりません。');
@@ -60,81 +51,88 @@
   }
 
   /* ================================================================
-     M3 — ImageAnimator（モザイク → クリア のモーフィング）
+     M3 — ImageAnimator
+     モザイク → クリア のモーフィング（canvas ピクセル化）
 
-     実装方針:
-       - 次画像をオフスクリーン canvas に描画
-       - requestAnimationFrame ループで pixelSize を大→小へ変化させる
-       - pixelSize が 1 になったら canvas を非表示にし img を表示（完了）
-       - 現在画像は canvas アニメーション中に opacity フェードアウト
+     ピクセル化の正しい手順：
+       1. オフスクリーン canvas（small）に画像を縮小描画
+       2. メイン canvas に small を拡大描画（imageSmoothingEnabled=false）
+       → これで確実にブロック状のモザイクになる
      ================================================================ */
   function createImageAnimator(opts) {
-    var currentEl   = opts.currentEl;  // img.ps-image-slot--current
-    var nextEl      = opts.nextEl;     // img.ps-image-slot--next（モザイク中は非表示）
-    var stageEl     = opts.stageEl;    // .ps-stage（canvas をここに追加）
+    var currentEl   = opts.currentEl;
+    var nextEl      = opts.nextEl;
+    var stageEl     = opts.stageEl;
     var onCompleted = opts.onCompleted;
 
-    var state = 'Idle';
-    var _canvas = null;
+    var state   = 'Idle';
+    var _canvas = null;   // 表示用メインcanvas
+    var _small  = null;   // ピクセル化用オフスクリーンcanvas
     var _ctx    = null;
+    var _sCtx   = null;
     var _rafId  = null;
-    var _offImg = null; // 次画像のオフスクリーンImage
+    var _offImg = null;
 
-    var MORPH_MS    = 900;  // モザイク→クリアの総時間（ms）
-    var PIXEL_START = 48;   // 最初のピクセルサイズ（大きいほど荒い）
-    var PIXEL_END   = 1;    // 最終ピクセルサイズ（1 = 通常）
+    /* [Undefined] morphStrength: 以下の値で調整 */
+    var MORPH_MS    = 1100; // アニメーション総時間(ms)
+    var PIXEL_START = 80;   // 初期ピクセルサイズ（大きいほど荒い）
+    var PIXEL_END   = 1;
 
-    /* canvas を生成してステージに追加 */
     function _createCanvas() {
       var c = document.createElement('canvas');
-      c.style.cssText = [
-        'position:absolute',
-        'top:0', 'left:0',
-        'width:100%', 'height:100%',
-        'z-index:4',
-        'display:none',
-        'image-rendering:pixelated',
-        'image-rendering:crisp-edges'
-      ].join(';');
+      c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;display:none';
       stageEl.appendChild(c);
       return c;
     }
 
-    /* canvas に pixelSize でモザイクを描画 */
+    function _resizeCanvas() {
+      var w = stageEl.offsetWidth  || 800;
+      var h = stageEl.offsetHeight || 480;
+      _canvas.width = w;
+      _canvas.height = h;
+      _small.width  = w;
+      _small.height = h;
+    }
+
+    /* 正しいピクセル化描画 */
     function _drawMosaic(pixelSize) {
       var w = _canvas.width, h = _canvas.height;
-      _ctx.clearRect(0, 0, w, h);
+
       if (pixelSize <= 1) {
+        // ピクセルサイズ1 = そのまま描画
+        _ctx.clearRect(0, 0, w, h);
+        _ctx.imageSmoothingEnabled = true;
         _ctx.drawImage(_offImg, 0, 0, w, h);
         return;
       }
-      var cols = Math.ceil(w / pixelSize);
-      var rows = Math.ceil(h / pixelSize);
-      // 縮小して拡大（ピクセル化）
-      var tmpW = cols, tmpH = rows;
-      _ctx.drawImage(_offImg, 0, 0, tmpW, tmpH);
+
+      // step1: small canvas に縮小描画
+      var sw = Math.max(1, Math.floor(w / pixelSize));
+      var sh = Math.max(1, Math.floor(h / pixelSize));
+      _sCtx.clearRect(0, 0, w, h);
+      _sCtx.imageSmoothingEnabled = true;
+      _sCtx.drawImage(_offImg, 0, 0, sw, sh);
+
+      // step2: main canvas に拡大描画（スムージングOFF → ブロック状になる）
+      _ctx.clearRect(0, 0, w, h);
       _ctx.imageSmoothingEnabled = false;
-      _ctx.drawImage(_canvas, 0, 0, tmpW, tmpH, 0, 0, w, h);
+      _ctx.drawImage(_small, 0, 0, sw, sh, 0, 0, w, h);
     }
 
-    /* モザイクアニメーションループ */
-    function _animate(startTs, imgSrc) {
+    function _animate(startTs) {
       function _frame(ts) {
         if (state !== 'AnimatingIn') return;
-        var elapsed = ts - startTs;
-        var t = Math.min(elapsed / MORPH_MS, 1); // 0.0 → 1.0
-        // イーズアウト
-        var eased = 1 - Math.pow(1 - t, 3);
-        var pixelSize = Math.max(PIXEL_END, Math.round(PIXEL_START * (1 - eased)));
+        var t = Math.min((ts - startTs) / MORPH_MS, 1);
+        // イーズアウト（ゆっくり解像度が上がる）
+        var eased     = 1 - Math.pow(1 - t, 2.5);
+        var pixelSize = Math.max(PIXEL_END, Math.round(PIXEL_START - (PIXEL_START - PIXEL_END) * eased));
         _drawMosaic(pixelSize);
 
         if (t < 1) {
           _rafId = requestAnimationFrame(_frame);
         } else {
-          // アニメーション完了 → canvas を隠して img を表示
+          // 完了
           _canvas.style.display = 'none';
-          nextEl.style.opacity  = '1';
-          nextEl.style.filter   = '';
           state = 'Done';
           _finish();
         }
@@ -142,17 +140,16 @@
       _rafId = requestAnimationFrame(_frame);
     }
 
-    /* 完了処理: currentEl を次画像にスワップし、nextEl をリセット */
     function _finish() {
-      // currentEl を次画像に更新
-      currentEl.src = nextEl.src;
-      currentEl.style.opacity    = '1';
+      // currentEl を次画像にスワップ（transition なしで即時）
+      currentEl.src              = nextEl.src;
       currentEl.style.transition = 'none';
+      currentEl.style.opacity    = '1';
       currentEl.classList.remove('ps-animating-out');
       void currentEl.offsetWidth;
       currentEl.style.transition = '';
 
-      // nextEl を非表示に戻す（transition なしで即時）
+      // nextEl を即時非表示にリセット
       nextEl.style.transition = 'none';
       nextEl.style.opacity    = '0';
       void nextEl.offsetWidth;
@@ -162,49 +159,46 @@
       onCompleted();
     }
 
-    /* canvas サイズをステージに合わせる */
-    function _resizeCanvas() {
-      _canvas.width  = stageEl.offsetWidth  || 800;
-      _canvas.height = stageEl.offsetHeight || 480;
-    }
-
     // 初期化
     _canvas = _createCanvas();
+    _small  = document.createElement('canvas');
     _ctx    = _canvas.getContext('2d');
+    _sCtx   = _small.getContext('2d');
 
     return {
       getState: function () { return state; },
-
       startAnimation: function (payload) {
         if (state !== 'Idle') return;
         state = 'AnimatingOut';
 
-        // 現在画像フェードアウト開始
+        // 現在画像をフェードアウト
         currentEl.classList.add('ps-animating-out');
 
-        // 次画像を Image オブジェクトとして読み込む
         _offImg = new Image();
         _offImg.crossOrigin = 'anonymous';
 
         _offImg.onload = function () {
-          if (state !== 'AnimatingOut') return; // キャンセルされた場合
+          if (state !== 'AnimatingOut') return;
 
-          // AnimatingOut → AnimatingIn
+          // 現在画像を即時非表示（canvasが前面に出る）
           currentEl.classList.remove('ps-animating-out');
-          currentEl.style.opacity = '0';
+          currentEl.style.transition = 'none';
+          currentEl.style.opacity    = '0';
+          void currentEl.offsetWidth;
+          currentEl.style.transition = '';
 
-          // canvas を表示してモザイク開始
+          nextEl.src             = payload.nextImageSrc;
+          nextEl.style.opacity   = '0'; // img は非表示のままcanvasで表示
+
           _resizeCanvas();
+          _drawMosaic(PIXEL_START); // 最初のフレームを即描画
           _canvas.style.display = 'block';
-          nextEl.style.opacity  = '0'; // img は非表示のまま（canvas で表示）
-          nextEl.src = payload.nextImageSrc;
 
           state = 'AnimatingIn';
-          requestAnimationFrame(function (ts) { _animate(ts, payload.nextImageSrc); });
+          requestAnimationFrame(function (ts) { _animate(ts); });
         };
 
         _offImg.onerror = function () {
-          // 画像読み込み失敗時: フォールバックとして即時完了
           _log('[ImageAnimator] 画像読み込み失敗: ' + payload.nextImageSrc);
           nextEl.src = payload.nextImageSrc;
           state = 'AnimatingIn';
@@ -218,61 +212,46 @@
 
   /* ================================================================
      M4 — CaptionAnimator
-     状態: "Idle" | "DelayWaiting" | "AnimatingIn" | "Done"
-
-     点滅の原因と修正:
-       完了後に nextEl のテキスト・クラスをリセットする際、
-       transition が残っていると opacity:0 へ戻るアニメーションが走る。
-       → visibility:hidden で即時非表示にしてからリセットし、
-         visibility を戻す方式で点滅を防ぐ。
+     点滅根絶策：transitionend を使わず setTimeout で完了を管理する。
+     duration と同じ時間後に1回だけ確実に完了処理が走る。
      ================================================================ */
   function createCaptionAnimator(opts) {
     var currentEl   = opts.currentEl;
     var nextEl      = opts.nextEl;
     var onCompleted = opts.onCompleted;
 
+    var CAPTION_DURATION_MS = 550; // CSSの --ps-anim-duration-caption と合わせる
+
     var state        = 'Idle';
     var outCompleted = false;
-    var delayTimerId = null;
-    var _inFired     = false;
+    var _outTimerId  = null;
+    var _delayTimerId = null;
+    var _inTimerId   = null;
 
-    function _handleOutCompleted(e) {
-      if (e.propertyName !== 'opacity') return;
-      if (state !== 'DelayWaiting') return;
-      currentEl.removeEventListener('transitionend', _handleOutCompleted);
-      outCompleted = true;
-    }
-
-    function _handleInCompleted(e) {
-      if (e.propertyName !== 'opacity') return;
-      if (state !== 'AnimatingIn') return;
-      if (_inFired) return;
-      _inFired = true;
-
-      nextEl.removeEventListener('transitionend', _handleInCompleted);
-      state = 'Done';
-
-      // ① currentEl に表示テキストをスワップ（まだ opacity:0 のまま）
-      currentEl.textContent = nextEl.textContent;
-      currentEl.classList.remove('ps-animating-out');
-      // transition なしで currentEl を即時表示状態に戻す
-      currentEl.style.transition = 'none';
-      currentEl.style.opacity    = '1';
-      void currentEl.offsetWidth;
-      currentEl.style.transition = '';
-
-      // ② nextEl を visibility:hidden で即時非表示 → クラス除去 → 待機位置へ戻す
-      //    visibility:hidden なら transition は視覚的に発生しない
-      nextEl.style.visibility = 'hidden';
-      nextEl.classList.remove('ps-animating-in');
-      // transition を無効にして即時リセット
+    function _resetNextEl() {
+      // nextEl を完全に非表示の待機状態へ（transition なし・点滅なし）
       nextEl.style.transition = 'none';
       nextEl.style.opacity    = '0';
       nextEl.style.transform  = 'translateX(-40px)';
+      nextEl.classList.remove('ps-animating-in');
       void nextEl.offsetWidth;
-      // transition と visibility を戻す
       nextEl.style.transition = '';
-      nextEl.style.visibility = '';
+    }
+
+    function _onInCompleted() {
+      // アニメーション完了（setTimeout で1回だけ呼ばれる）
+      state = 'Done';
+
+      // currentEl にテキストをスワップ（transition なしで瞬時に opacity:1）
+      currentEl.textContent      = nextEl.textContent;
+      currentEl.style.transition = 'none';
+      currentEl.style.opacity    = '1';
+      currentEl.classList.remove('ps-animating-out');
+      void currentEl.offsetWidth;
+      currentEl.style.transition = '';
+
+      // nextEl をリセット（点滅しない）
+      _resetNextEl();
 
       outCompleted = false;
       state = 'Idle';
@@ -281,22 +260,19 @@
 
     function _onDelayElapsed() {
       if (state !== 'DelayWaiting') return;
-      state    = 'AnimatingIn';
-      _inFired = false;
+      state = 'AnimatingIn';
 
-      // ps-animating-in 付与前に確実に待機状態を作る
-      nextEl.style.visibility = 'hidden';
-      nextEl.classList.remove('ps-animating-in');
-      nextEl.style.transition = 'none';
-      nextEl.style.opacity    = '0';
-      nextEl.style.transform  = 'translateX(-40px)';
-      void nextEl.offsetWidth;
-      nextEl.style.transition = '';
-      nextEl.style.visibility = '';
+      // 確実に待機状態からスタートさせる
+      _resetNextEl();
 
-      // クラス付与で transition 発火
-      nextEl.classList.add('ps-animating-in');
-      nextEl.addEventListener('transitionend', _handleInCompleted);
+      // 1フレーム後にクラス付与（reflow が確実に終わってから）
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          nextEl.classList.add('ps-animating-in');
+          // transitionend は使わず、duration と同じ時間後に完了処理
+          _inTimerId = setTimeout(_onInCompleted, CAPTION_DURATION_MS + 50); // +50ms マージン
+        });
+      });
     }
 
     return {
@@ -306,10 +282,12 @@
 
         nextEl.textContent = payload.nextCaption;
 
-        currentEl.addEventListener('transitionend', _handleOutCompleted);
+        // 現在説明文フェードアウト（CSS transition に任せる）
         currentEl.classList.add('ps-animating-out');
+        // setTimeout でoutCompleted管理（transitionendは使わない）
+        _outTimerId = setTimeout(function () { outCompleted = true; }, 350);
 
-        delayTimerId = setTimeout(_onDelayElapsed, payload.delayMs);
+        _delayTimerId = setTimeout(_onDelayElapsed, payload.delayMs);
         state        = 'DelayWaiting';
         outCompleted = false;
       }
@@ -355,14 +333,18 @@
         case 'ImageSwitchCompleted':
           if (state !== 'SwitchingImage') { _log('[M1] 棄却: ImageSwitchCompleted'); return; }
           state = 'SwitchingCaption';
-          captionAnimator.startAnimation({ currentCaption: _currentCaption, nextCaption: _nextCaption, delayMs: DELAY_MS });
+          captionAnimator.startAnimation({
+            currentCaption: _currentCaption,
+            nextCaption:    _nextCaption,
+            delayMs:        DELAY_MS
+          });
           break;
 
         case 'CaptionSwitchCompleted':
           if (state !== 'SwitchingCaption') { _log('[M1] 棄却: CaptionSwitchCompleted'); return; }
-          state = 'Completing';
+          state        = 'Completing';
           currentIndex = nextIndex;
-          state = 'Idle';
+          state        = 'Idle';
           timer.reset();
           _log('[M1] 完了。currentIndex=' + currentIndex);
           break;
@@ -396,7 +378,7 @@
       '<div class="ps-root">',
       '  <div class="ps-stage">',
       '    <img class="ps-image-slot ps-image-slot--current" src="'+_esc(firstSlide.imageSrc)+'" alt="'+_esc(firstSlide.caption)+'">',
-      '    <img class="ps-image-slot ps-image-slot--next" src="" alt="" style="opacity:0">',
+      '    <img class="ps-image-slot ps-image-slot--next" src="" alt="" style="opacity:0;pointer-events:none">',
       '  </div>',
       '  <div class="ps-caption-area">',
       '    <p class="ps-caption ps-caption--current">'+_esc(firstSlide.caption)+'</p>',
@@ -407,7 +389,7 @@
   }
 
   /* ================================================================
-     PhotoSlider.init — 公開API
+     PhotoSlider.init
      ================================================================ */
   function init(opts) {
     var mountElement = opts.mountElement;
@@ -422,7 +404,6 @@
 
     var collection = createSlideCollection(slides);
     if (collection.getCount() === 0) {
-      _log('slides が空。');
       return { destroy: function(){}, next: function(){}, prev: function(){} };
     }
 
@@ -453,8 +434,10 @@
     });
 
     controller = createSliderController({
-      collection: collection, imageAnimator: imageAnimator,
-      captionAnimator: captionAnimator, timer: timer
+      collection:      collection,
+      imageAnimator:   imageAnimator,
+      captionAnimator: captionAnimator,
+      timer:           timer
     });
 
     timer.start();
