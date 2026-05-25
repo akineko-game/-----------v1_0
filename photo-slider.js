@@ -246,6 +246,7 @@
     var mountElement = opts.mountElement;
     var slides       = opts.slides;
     var autoPlay     = opts.autoPlay || {};
+    var dotsEnabled  = (opts.dots !== false);  /* デフォルト true */
 
     var root = (typeof mountElement === 'string')
       ? document.querySelector(mountElement) : mountElement;
@@ -263,6 +264,7 @@
       '    <img class="ps-image-slot ps-image-slot--current" src="" alt="" style="opacity:1">',
       '    <img class="ps-image-slot ps-image-slot--next"    src="" alt="" style="opacity:0;pointer-events:none">',
       '  </div>',
+      '  <div class="ps-dots-wrap" style="display:none"></div>',
       '</div>'
     ].join('\n');
 
@@ -291,6 +293,89 @@
     /* 現在の説明文 canvas を保持（切替時に srcA として渡す） */
     var _curCapCanvas = null;
 
+    /* ドットナビゲーション */
+    var dotsWrap = psRoot.querySelector('.ps-dots-wrap');
+    var _dotEls  = [];
+
+    function _initDots() {
+      if (!dotsEnabled) return;
+      var count = collection.getCount();
+      dotsWrap.innerHTML = '';
+      _dotEls = [];
+      for (var i = 0; i < count; i++) {
+        var d = document.createElement('button');
+        d.className   = 'ps-dot';
+        d.setAttribute('aria-label', (i + 1) + '枚目');
+        d.setAttribute('type', 'button');
+        (function (idx) {
+          d.addEventListener('click', function () { _switchTo(idx); });
+        })(i);
+        dotsWrap.appendChild(d);
+        _dotEls.push(d);
+      }
+      dotsWrap.style.display = 'flex';
+      _updateDots(0);
+    }
+
+    function _updateDots(idx) {
+      _dotEls.forEach(function (d, i) {
+        d.className = 'ps-dot' + (i === idx ? ' ps-dot--active' : '');
+      });
+    }
+
+    /* インデックス直接指定で切替 */
+    function _switchTo(idx) {
+      if (state !== 'Idle') return;
+      if (idx === curIndex) return;
+      var dir = (idx > curIndex) ? 'next' : 'prev';
+      /* curIndex を一時的に書き換えて _switch の方向計算を流用 */
+      var savedCur = curIndex;
+      curIndex = idx - (dir === 'next' ? 1 : -1);
+      if (curIndex < 0) curIndex = collection.getCount() - 1;
+      if (curIndex >= collection.getCount()) curIndex = 0;
+      /* nextIndex が idx になるよう curIndex を調整済み */
+      curIndex = savedCur;
+      _switchByIndex(idx, dir);
+    }
+
+    function _switchByIndex(nextIndex, dir) {
+      if (state !== 'Idle') return;
+      var count = collection.getCount();
+      var cs = collection.getSlide(curIndex);
+      var ns = collection.getSlide(nextIndex);
+      state = 'Switching';
+
+      var imgDone = false, capDone = false;
+      function _tryComplete() {
+        if (!imgDone || !capDone) return;
+        curIndex = nextIndex;
+        _updateDots(curIndex);
+        state = 'Idle';
+        timer.reset();
+        _log('[M1] 完了。curIndex=' + curIndex);
+      }
+
+      var nxtCapCanvas = _capCanvas(ns.caption);
+      var capH = Math.max(_curCapCanvas ? _curCapCanvas.height : 0, nxtCapCanvas.height);
+
+      curImg.style.opacity = '0';
+      nxtImg.style.opacity = '0';
+      loadBoth(cs.imageSrc, ns.imageSrc, function (imgCur, imgNxt) {
+        imgSwitcher.animate(imgCur, imgNxt, _stageW(), _stageH(), dir, function () {
+          curImg.src           = ns.imageSrc;
+          curImg.style.opacity = '1';
+          nxtImg.style.opacity = '0';
+          imgDone = true;
+          _tryComplete();
+        });
+        capSwitcher.animate(_curCapCanvas, nxtCapCanvas, _stageW(), capH, dir, function () {
+          _curCapCanvas = nxtCapCanvas;
+          capDone = true;
+          _tryComplete();
+        });
+      });
+    }
+
     /* 初期表示 */
     function _showFirst() {
       var slide = collection.getSlide(0);
@@ -303,6 +388,9 @@
       /* 説明文 canvas を静的表示 */
       _curCapCanvas = _capCanvas(slide.caption);
       capSwitcher.show(_curCapCanvas, _stageW(), _curCapCanvas.height);
+
+      /* ドット生成 */
+      _initDots();
     }
 
     /* 切替 */
@@ -322,8 +410,8 @@
       var imgDone = false, capDone = false;
       function _tryComplete() {
         if (!imgDone || !capDone) return;
-        /* 両方完了 */
         curIndex = nextIndex;
+        _updateDots(curIndex);
         state    = 'Idle';
         timer.reset();
         _log('[M1] 完了。curIndex=' + curIndex);

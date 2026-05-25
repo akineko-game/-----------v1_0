@@ -34,3 +34,36 @@
 
 /* スマホ対応 [Undefined]: 未確定 */
 @media (max-width: 768px) { /* TODO */ }
+
+/* ── ドットナビゲーション ──────────────────────────── */
+.ps-root .ps-dots-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 8px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.ps-root .ps-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+  flex-shrink: 0;
+}
+
+.ps-root .ps-dot:hover {
+  border-color: #fff;
+  transform: scale(1.2);
+}
+
+.ps-root .ps-dot--active {
+  background: #fff;
+  border-color: #fff;
+  transform: scale(1.15);
+}
