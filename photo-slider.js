@@ -1,4 +1,4 @@
-/**
+/***
  * PhotoSlider — photo-slider.js
  * 既存ホームページ組み込み型Webコンポーネント（IIFE形式）
  *
