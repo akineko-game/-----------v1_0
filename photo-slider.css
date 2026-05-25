@@ -44,22 +44,18 @@
 }
 
 /* 現在画像: 通常状態 */
+/* 現在画像: canvas A が前面に出るため img は非表示（JS が opacity:0 で制御） */
 .ps-root .ps-image-slot--current {
   opacity: 1;
   z-index: 2;
-  transition: opacity var(--ps-anim-duration-image-out) var(--ps-anim-easing);
+  transition: none; /* アニメーションはcanvasで行う */
 }
 
-/* 現在画像: フェードアウト（モザイクcanvasの後ろに消える） */
-.ps-root .ps-image-slot--current.ps-animating-out {
-  opacity: 0;
-}
-
-/* 次画像: canvas が前に出るため img は z-index 低め */
+/* 次画像: canvas B が前面に出るため img は非表示（JS が opacity:0 で制御） */
 .ps-root .ps-image-slot--next {
   opacity: 0;
-  z-index: 3;
-  /* 表示・非表示は JS が style.opacity で制御 */
+  z-index: 2;
+  transition: none;
 }
 
 /* canvas（モザイク描画用）は JS が生成・制御 */
