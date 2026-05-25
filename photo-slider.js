@@ -54,11 +54,10 @@
      M3 — ImageAnimator
      Canvas A（現在画像）: 右下へ移動しながらモザイク化 + フェードアウト
      Canvas B（次画像）  : 左下から移動しながらモザイクが取れてフェードイン
-     2枚を同時進行。img 要素は使わず canvas のみで描画する。
      ================================================================ */
   function createImageAnimator(opts) {
-    var currentEl   = opts.currentEl;   // img（表示制御のみ、描画は canvas）
-    var nextEl      = opts.nextEl;      // img（src セット用）
+    var currentEl   = opts.currentEl;
+    var nextEl      = opts.nextEl;
     var stageEl     = opts.stageEl;
     var onCompleted = opts.onCompleted;
 
@@ -66,103 +65,100 @@
     var _rafId = null;
 
     /* 定数 */
-    var MORPH_MS    = 1200;  // アニメーション総時間(ms)
-    var PIXEL_MAX   = 60;    // モザイク最大ピクセルサイズ
-    var MOVE_X      = 0.22;  // 水平移動量（ステージ幅の比率）
-    var MOVE_Y      = 0.15;  // 垂直移動量（ステージ高さの比率）
+    var MORPH_MS  = 1200;  /* アニメーション総時間(ms) */
+    var PIXEL_MAX = 60;    /* モザイク最大ピクセルサイズ */
+    var MOVE_X    = 0.22;  /* 水平移動量（幅の比率） */
+    var MOVE_Y    = 0.15;  /* 垂直移動量（高さの比率） */
 
-    /* Canvas A: 現在画像退避用 */
-    var _cA, _ctxA;
-    /* Canvas B: 次画像登場用 */
-    var _cB, _ctxB;
-    /* オフスクリーン（ピクセル化縮小用） */
-    var _sA, _sCtxA, _sB, _sCtxB;
-    /* 画像 */
+    var _cA, _ctxA;  /* Canvas A: 現在画像退避 */
+    var _cB, _ctxB;  /* Canvas B: 次画像登場   */
     var _imgCur = null, _imgNxt = null;
 
+    /* canvas 生成 */
     function _mkCanvas(z) {
       var c = document.createElement('canvas');
       c.style.cssText = [
-        'position:absolute', 'top:0', 'left:0',
-        'width:100%', 'height:100%',
-        'z-index:' + z, 'display:none',
-        'pointer-events:none'
+        'position:absolute','top:0','left:0',
+        'width:100%','height:100%',
+        'z-index:'+z,'display:none','pointer-events:none'
       ].join(';');
       stageEl.appendChild(c);
       return c;
     }
 
+    /* ステージサイズに合わせて canvas を設定 */
     function _resize() {
       var w = stageEl.offsetWidth  || 800;
       var h = stageEl.offsetHeight || 480;
       _cA.width = w; _cA.height = h;
       _cB.width = w; _cB.height = h;
-      _sA.width = w; _sA.height = h;
-      _sB.width = w; _sB.height = h;
     }
 
-    /* img を pixelSize でモザイク化して ctx に描画
-       ox, oy: canvas 上のオフセット（移動表現）
-       alpha : 0〜1 の不透明度 */
-    function _drawPixel(ctx, sCtx, sCanvas, img, pixelSize, ox, oy, alpha) {
-      var w = ctx.canvas.width;
-      var h = ctx.canvas.height;
-      ctx.clearRect(0, 0, w, h);
+    /* 1枚の canvas に画像をモザイク描画する
+       img      : Image オブジェクト
+       pixelSize: モザイクのブロックサイズ（1=クリア）
+       ox, oy   : canvas 上の描画オフセット（移動表現）
+       alpha    : 0〜1 の不透明度                        */
+    function _drawOne(ctx, img, pixelSize, ox, oy, alpha) {
+      var cw = ctx.canvas.width;
+      var ch = ctx.canvas.height;
+      ctx.clearRect(0, 0, cw, ch);
       if (!img) return;
 
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-      ctx.translate(ox, oy);
 
       if (pixelSize <= 1) {
+        /* クリア描画 */
         ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(img, 0, 0, w, h);
+        ctx.drawImage(img, ox, oy, cw, ch);
       } else {
-        /* 縮小 → 拡大でブロックモザイク */
-        var sw = Math.max(1, Math.ceil(w / pixelSize));
-        var sh = Math.max(1, Math.ceil(h / pixelSize));
-        sCtx.clearRect(0, 0, w, h);
-        sCtx.imageSmoothingEnabled = true;
-        sCtx.drawImage(img, 0, 0, sw, sh);
+        /* モザイク描画:
+           (1) 縮小専用の一時 canvas を作って img を sw×sh に縮小
+           (2) スムージング OFF で cw×ch に拡大 → ブロック状になる */
+        var sw = Math.max(1, Math.ceil(cw / pixelSize));
+        var sh = Math.max(1, Math.ceil(ch / pixelSize));
+
+        var tmp = document.createElement('canvas');
+        tmp.width  = sw;
+        tmp.height = sh;
+        var tCtx = tmp.getContext('2d');
+        tCtx.imageSmoothingEnabled = true;
+        tCtx.drawImage(img, 0, 0, sw, sh);
 
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(sCanvas, 0, 0, sw, sh, 0, 0, w, h);
+        ctx.drawImage(tmp, 0, 0, sw, sh, ox, oy, cw, ch);
       }
       ctx.restore();
     }
 
+    /* メインアニメーションループ */
     function _animate(startTs) {
       function _frame(ts) {
         if (state !== 'Animating') return;
 
-        var t = Math.min((ts - startTs) / MORPH_MS, 1.0);
-
-        /* イーズ関数 */
-        var easeOut = 1 - Math.pow(1 - t, 2.5);  // 0→1 減速
-        var easeIn  = Math.pow(t, 1.6);           // 0→1 加速
-
+        var t       = Math.min((ts - startTs) / MORPH_MS, 1.0);
+        var easeOut = 1 - Math.pow(1 - t, 2.5);  /* 0→1 減速 */
+        var easeIn  = Math.pow(t, 1.6);           /* 0→1 加速 */
         var W = _cA.width, H = _cA.height;
 
-        /* === Canvas A: 現在画像 ===
-           右下へ移動、モザイク増加（1→PIXEL_MAX）、フェードアウト（1→0） */
-        var pxA   = Math.round(1 + (PIXEL_MAX - 1) * easeIn);
-        var alpA  = 1.0 - easeOut;
-        var oxA   =  W * MOVE_X * easeOut;   // 右へ
-        var oyA   =  H * MOVE_Y * easeOut;   // 下へ
-        _drawPixel(_ctxA, _sCtxA, _sA, _imgCur, pxA, oxA, oyA, alpA);
+        /* Canvas A: 現在画像 ── 右下へ移動・モザイク増加・フェードアウト */
+        _drawOne(_ctxA, _imgCur,
+          Math.round(1 + (PIXEL_MAX - 1) * easeIn),  /* px: 1→PIXEL_MAX */
+           W * MOVE_X * easeOut,                      /* ox: 0→右 */
+           H * MOVE_Y * easeOut,                      /* oy: 0→下 */
+          1.0 - easeOut);                             /* alpha: 1→0 */
 
-        /* === Canvas B: 次画像 ===
-           左下から中央へ移動、モザイク減少（PIXEL_MAX→1）、フェードイン（0→1） */
-        var pxB   = Math.max(1, Math.round(PIXEL_MAX - (PIXEL_MAX - 1) * easeOut));
-        var alpB  = easeIn;
-        var oxB   = -W * MOVE_X * (1 - easeOut);  // 左外→中央
-        var oyB   =  H * MOVE_Y * (1 - easeOut);  // 下→中央
-        _drawPixel(_ctxB, _sCtxB, _sB, _imgNxt, pxB, oxB, oyB, alpB);
+        /* Canvas B: 次画像 ── 左下から中央へ移動・モザイク減少・フェードイン */
+        _drawOne(_ctxB, _imgNxt,
+          Math.max(1, Math.round(PIXEL_MAX * (1 - easeOut))), /* px: PIXEL_MAX→1 */
+          -W * MOVE_X * (1 - easeOut),                        /* ox: 左外→0 */
+           H * MOVE_Y * (1 - easeOut),                        /* oy: 下→0 */
+          easeIn);                                             /* alpha: 0→1 */
 
         if (t < 1.0) {
           _rafId = requestAnimationFrame(_frame);
         } else {
-          /* 完了 */
           _cA.style.display = 'none';
           _cB.style.display = 'none';
           state = 'Done';
@@ -172,37 +168,32 @@
       _rafId = requestAnimationFrame(_frame);
     }
 
+    /* 完了後: img 要素を差し替えて canvas を片付ける */
     function _finish() {
-      /* currentEl を次画像に差し替えて表示 */
       currentEl.src           = nextEl.src;
       currentEl.style.opacity = '1';
-
-      /* nextEl を非表示に戻す */
-      nextEl.style.opacity = '0';
-
+      nextEl.style.opacity    = '0';
       state = 'Idle';
       onCompleted();
     }
 
-    /* 画像を並行読み込みし、両方揃ったらコールバック */
+    /* 2枚の画像を並行ロードし、両方揃ったら cb(imgA, imgB) */
     function _loadBoth(srcA, srcB, cb) {
-      var results = [null, null], done = 0;
-      function _load(src, idx) {
+      var res = [null, null], n = 0;
+      function _one(src, idx) {
         var img = new Image();
         img.crossOrigin = 'anonymous';
-        img.onload  = function () { results[idx] = img; done++; if (done === 2) cb(results[0], results[1]); };
-        img.onerror = function () {                      done++; if (done === 2) cb(results[0], results[1]); };
+        img.onload  = function () { res[idx] = img; if (++n === 2) cb(res[0], res[1]); };
+        img.onerror = function () {                  if (++n === 2) cb(res[0], res[1]); };
         img.src = src;
       }
-      _load(srcA, 0);
-      _load(srcB, 1);
+      _one(srcA, 0);
+      _one(srcB, 1);
     }
 
     /* 初期化 */
     _cA = _mkCanvas(5); _ctxA = _cA.getContext('2d');
     _cB = _mkCanvas(6); _ctxB = _cB.getContext('2d');
-    _sA = document.createElement('canvas'); _sCtxA = _sA.getContext('2d');
-    _sB = document.createElement('canvas'); _sCtxB = _sB.getContext('2d');
 
     return {
       getState: function () { return state; },
@@ -218,15 +209,13 @@
 
         _loadBoth(payload.currentImageSrc, payload.nextImageSrc, function (imgCur, imgNxt) {
           if (state !== 'Loading') return;
-
           _imgCur = imgCur;
           _imgNxt = imgNxt;
-
           _resize();
 
-          /* 初期フレーム描画（現在画像=クリア、次画像=最大モザイク） */
-          _drawPixel(_ctxA, _sCtxA, _sA, _imgCur, 1,        0, 0, 1.0);
-          _drawPixel(_ctxB, _sCtxB, _sB, _imgNxt, PIXEL_MAX, 0, 0, 0.0);
+          /* 初期フレーム: A=クリア表示、B=最大モザイクで透明 */
+          _drawOne(_ctxA, _imgCur, 1,        0, 0, 1.0);
+          _drawOne(_ctxB, _imgNxt, PIXEL_MAX, 0, 0, 0.0);
           _cA.style.display = 'block';
           _cB.style.display = 'block';
 
@@ -236,7 +225,6 @@
       }
     };
   }
-
   /* ================================================================
      M4 — CaptionAnimator
      点滅根絶策：transitionend を使わず setTimeout で完了を管理する。
