@@ -134,13 +134,17 @@
         _cB.style.display = 'none';
       },
 
-      /* モザイクアニメーション切替 */
-      animate: function (srcA, srcB, w, h, onDone) {
+      /* モザイクアニメーション切替
+         dir: 'next' = 現在→右下退避・次→左下登場
+              'prev' = 現在→左下退避・次→右下登場（方向反転） */
+      animate: function (srcA, srcB, w, h, dir, onDone) {
         if (_state !== 'Idle') return;
         _state = 'Animating';
         _resize(w, h);
 
-        /* A・B ともに bottom:0 で画像下部に重ねる */
+        var signA = (dir === 'prev') ? -1 : 1;  /* A退避方向: next=右, prev=左 */
+        var signB = (dir === 'prev') ? 1 : -1;  /* B登場方向: next=左から, prev=右から */
+
         _cA.style.bottom = '0'; _cA.style.top = '';
         _cB.style.bottom = '0'; _cB.style.top = '';
 
@@ -158,24 +162,23 @@
           var easeIn  = Math.pow(t, 1.6);
           var W = _cA.width, H = _cA.height;
 
-          /* A: 右下へ退避・モザイク増加・フェードアウト */
+          /* A: 退避（next=右下, prev=左下）・モザイク増加・フェードアウト */
           drawPixelated(_ctxA, srcA,
             Math.round(1 + (PIXEL_MAX - 1) * easeIn),
-            W * MOVE_X * easeOut,
+            signA * W * MOVE_X * easeOut,
             H * MOVE_Y * easeOut,
             1.0 - easeOut);
 
-          /* B: 左下から登場・モザイク減少・フェードイン */
+          /* B: 登場（next=左下から, prev=右下から）・モザイク減少・フェードイン */
           drawPixelated(_ctxB, srcB,
             Math.max(1, Math.round(PIXEL_MAX * (1 - easeOut))),
-            -W * MOVE_X * (1 - easeOut),
-             H * MOVE_Y * (1 - easeOut),
+            signB * W * MOVE_X * (1 - easeOut),
+            H * MOVE_Y * (1 - easeOut),
             easeIn);
 
           if (t < 1.0) {
             requestAnimationFrame(_frame);
           } else {
-            /* 完了: B をそのまま A に昇格させ B を非表示に */
             drawPixelated(_ctxA, srcB, 1, 0, 0, 1.0);
             _cB.style.display = 'none';
             _state = 'Idle';
@@ -326,29 +329,28 @@
         _log('[M1] 完了。curIndex=' + curIndex);
       }
 
-      /* 説明文 canvas を先に作る */
+      /* 説明文 canvas を先に作る（同期処理なのですぐ完了） */
       var nxtCapCanvas = _capCanvas(ns.caption);
       var capH = Math.max(_curCapCanvas ? _curCapCanvas.height : 0, nxtCapCanvas.height);
 
-      /* 画像アニメーション */
+      /* 画像を先読みし、完了後に画像・説明文を同時開始（タイミングずれを防止） */
       curImg.style.opacity = '0';
       nxtImg.style.opacity = '0';
       loadBoth(cs.imageSrc, ns.imageSrc, function (imgCur, imgNxt) {
-        imgSwitcher.animate(imgCur, imgNxt, _stageW(), _stageH(), function () {
-          /* 完了: img を差し替え */
+        /* 画像・説明文を同じフレームで同時開始 */
+        imgSwitcher.animate(imgCur, imgNxt, _stageW(), _stageH(), dir, function () {
           curImg.src           = ns.imageSrc;
           curImg.style.opacity = '1';
           nxtImg.style.opacity = '0';
           imgDone = true;
           _tryComplete();
         });
-      });
 
-      /* 説明文アニメーション（画像と同時開始） */
-      capSwitcher.animate(_curCapCanvas, nxtCapCanvas, _stageW(), capH, function () {
-        _curCapCanvas = nxtCapCanvas;
-        capDone = true;
-        _tryComplete();
+        capSwitcher.animate(_curCapCanvas, nxtCapCanvas, _stageW(), capH, dir, function () {
+          _curCapCanvas = nxtCapCanvas;
+          capDone = true;
+          _tryComplete();
+        });
       });
     }
 
