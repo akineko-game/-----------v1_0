@@ -65,10 +65,10 @@
     var _rafId = null;
 
     /* 定数 */
-    var MORPH_MS  = 1400;  /* アニメーション総時間(ms) */
-    var PIXEL_MAX = 120;   /* モザイク最大ピクセルサイズ */
-    var MOVE_X    = 0.55;  /* 水平移動量（幅の比率） */
-    var MOVE_Y    = 0.40;  /* 垂直移動量（高さの比率） */
+    var MORPH_MS  = 1600;  /* アニメーション総時間(ms) */
+    var PIXEL_MAX = 200;   /* モザイク最大ピクセルサイズ */
+    var MOVE_X    = 1.20;  /* 水平移動量（幅の比率） */
+    var MOVE_Y    = 0.90;  /* 垂直移動量（高さの比率） */
 
     var _cA, _ctxA;  /* Canvas A: 現在画像退避 */
     var _cB, _ctxB;  /* Canvas B: 次画像登場   */
@@ -159,10 +159,18 @@
         if (t < 1.0) {
           _rafId = requestAnimationFrame(_frame);
         } else {
-          _cA.style.display = 'none';
-          _cB.style.display = 'none';
-          state = 'Done';
-          _finish();
+          /* 点滅防止: img を先に表示してから canvas を消す */
+          currentEl.src           = nextEl.src;
+          currentEl.style.opacity = '1';
+          nextEl.style.opacity    = '0';
+          /* img が描画されるのを1フレーム待ってから canvas を消す */
+          requestAnimationFrame(function () {
+            _cA.style.display = 'none';
+            _cB.style.display = 'none';
+            state = 'Done';
+            onCompleted();
+          });
+          return; /* _frame のループはここで終わり */
         }
       }
       _rafId = requestAnimationFrame(_frame);
