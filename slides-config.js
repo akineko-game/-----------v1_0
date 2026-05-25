@@ -69,11 +69,11 @@ var PHOTO_SLIDER_CONFIG = {
       caption:  '滝の轟音 — 岩肌を削りながら落ちる水が、霧となって林の中に広がる。'
     },
     {
-      imageSrc: 'https://images.unsplash.com/photo-1510784722466-f2aa240c5ece?w=860&q=80',
+      imageSrc: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=860&q=80',
       caption:  '砂漠の夕焼け — 果てしない砂の海が、橙と紅に燃え上がる時間。'
     },
     {
-      imageSrc: 'https://images.unsplash.com/photo-1504701954957-2010ec3bcec1?w=860&q=80',
+      imageSrc: 'https://images.unsplash.com/photo-1500916434205-0c77489c6cf7?w=860&q=80',
       caption:  '熱帯の密林 — 幾重にも重なる緑の天蓋が、地面への光を遮る。'
     },
     {

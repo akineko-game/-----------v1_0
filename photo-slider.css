@@ -36,34 +36,26 @@
 
 /* ── ドットナビゲーション ──────────────────────────── */
 .ps-root .ps-dots-wrap {
-  display: flex;
-  /* justify-content は指定しない:
-     センタリングすると overflow 時に左端がクリップされて見えなくなる。
-     少ない場合は margin auto のドット側で中央寄せする。 */
-  align-items: center;
-  gap: 8px;
+  /* flexではなくtext-align:centerで中央寄せ
+     overflow時は左端から並ぶため左端が切れない */
+  display: block;
+  text-align: center;
+  white-space: nowrap;
   padding: 10px 12px 8px;
   background: rgba(0, 0, 0, 0.55);
 
-  /* 多すぎる場合は横スクロール */
   overflow-x: auto;
   overflow-y: hidden;
-  -webkit-overflow-scrolling: touch; /* iOS慣性スクロール */
-  scrollbar-width: none;             /* Firefox: スクロールバー非表示 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 .ps-root .ps-dots-wrap::-webkit-scrollbar {
-  display: none;                     /* Chrome/Safari: スクロールバー非表示 */
-}
-
-/* ドットが少なくて横スクロール不要な場合は中央寄せ */
-.ps-root .ps-dots-wrap::before,
-.ps-root .ps-dots-wrap::after {
-  content: '';
-  flex: 1 0 0;   /* 左右に等幅の余白を作ってドット群を中央に押し込む */
-  min-width: 4px;
+  display: none;
 }
 
 .ps-root .ps-dot {
+  display: inline-block;
+  vertical-align: middle;
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -71,8 +63,8 @@
   background: transparent;
   cursor: pointer;
   padding: 0;
+  margin: 0 4px;
   transition: background 0.2s, border-color 0.2s, transform 0.2s;
-  flex-shrink: 0; /* 絶対に縮まない → 溢れたら横スクロール */
 }
 
 .ps-root .ps-dot:hover {
@@ -102,7 +94,6 @@
 
   /* 説明文フォントを少し小さく */
   .ps-root .ps-dots-wrap {
-    gap: 6px;
     padding: 8px 10px 6px;
   }
 }
