@@ -321,6 +321,15 @@
       _dotEls.forEach(function (d, i) {
         d.className = 'ps-dot' + (i === idx ? ' ps-dot--active' : '');
       });
+      /* アクティブなドットが見切れている場合、スクロールして表示する */
+      var activeDot = _dotEls[idx];
+      if (activeDot && dotsWrap.scrollWidth > dotsWrap.clientWidth) {
+        var dotLeft   = activeDot.offsetLeft;
+        var dotWidth  = activeDot.offsetWidth;
+        var wrapWidth = dotsWrap.clientWidth;
+        var target    = dotLeft - (wrapWidth / 2) + (dotWidth / 2);
+        dotsWrap.scrollTo({ left: target, behavior: 'smooth' });
+      }
     }
 
     /* インデックス直接指定で切替 */

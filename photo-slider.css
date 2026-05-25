@@ -32,8 +32,7 @@
   image-rendering: crisp-edges;
 }
 
-/* スマホ対応 [Undefined]: 未確定 */
-@media (max-width: 768px) { /* TODO */ }
+
 
 /* ── ドットナビゲーション ──────────────────────────── */
 .ps-root .ps-dots-wrap {
@@ -41,8 +40,17 @@
   justify-content: center;
   align-items: center;
   gap: 8px;
-  padding: 10px 0 8px;
+  padding: 10px 12px 8px;
   background: rgba(0, 0, 0, 0.55);
+
+  /* 多すぎる場合は横スクロール */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch; /* iOS慣性スクロール */
+  scrollbar-width: none;             /* Firefox: スクロールバー非表示 */
+}
+.ps-root .ps-dots-wrap::-webkit-scrollbar {
+  display: none;                     /* Chrome/Safari: スクロールバー非表示 */
 }
 
 .ps-root .ps-dot {
@@ -54,7 +62,7 @@
   cursor: pointer;
   padding: 0;
   transition: background 0.2s, border-color 0.2s, transform 0.2s;
-  flex-shrink: 0;
+  flex-shrink: 0; /* 絶対に縮まない → 溢れたら横スクロール */
 }
 
 .ps-root .ps-dot:hover {
@@ -66,4 +74,25 @@
   background: #fff;
   border-color: #fff;
   transform: scale(1.15);
+}
+
+/* ── スマホ対応 ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .ps-root {
+    --ps-stage-height: 260px; /* 高さをスマホ向けに縮小 */
+  }
+
+  /* ドットを少し小さく・タップしやすいよう当たり判定を拡大 */
+  .ps-root .ps-dot {
+    width: 8px;
+    height: 8px;
+    padding: 6px; /* 実際のタップ領域を広げる */
+    box-sizing: content-box;
+  }
+
+  /* 説明文フォントを少し小さく */
+  .ps-root .ps-dots-wrap {
+    gap: 6px;
+    padding: 8px 10px 6px;
+  }
 }
